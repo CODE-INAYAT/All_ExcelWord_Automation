@@ -1,0 +1,213 @@
+'Table Creation Automation
+Option Explicit
+
+Sub CreateTableWithDynamicForm()
+    
+    Dim formName As String
+    formName = "frmDynamicInput"
+
+    'Part A: Check if the form exists. If not, create it
+    On Error Resume Next
+    Dim tempForm As Object
+    Set tempForm = ThisDocument.VBProject.VBComponents(formName)
+    On Error GoTo 0
+
+    If tempForm Is Nothing Then
+        ' The form does not exist, so we must create it
+        If CreateTheUserForm(formName) = False Then
+            MsgBox "Could not create the necessary UserForm. Aborting.", vbCritical
+            Exit Sub
+        End If
+    End If
+    
+    'Part B: The main table creation logic
+    Dim columnHeaders() As String
+    Dim columnInput As String
+    Dim numCols As Integer
+    Dim expectedRowCount As Long
+    Dim dataCollection As Collection
+    Dim rowData() As String
+    Dim i As Long, j As Long
+    Dim tempInput As String
+    Dim finalTable As Word.Table
+    Dim originalSelection As Word.Range
+    
+    Set originalSelection = Selection.Range
+    Set dataCollection = New Collection
+    expectedRowCount = -1
+    
+    On Error GoTo ErrorHandler
+
+    columnInput = InputBox("Please enter the column names, separated by commas.", "Step 1: Define Columns", "Name,Email,Branch")
+    If Trim(columnInput) = "" Then Exit Sub
+
+    columnHeaders = Split(columnInput, ",")
+    numCols = UBound(columnHeaders) + 1
+    For i = 0 To numCols - 1
+        columnHeaders(i) = Trim(columnHeaders(i))
+    Next i
+    
+    For i = 0 To numCols - 1
+        'Using the dynamically created form
+        Dim frm As Object
+        Set frm = VBA.UserForms.Add(formName)
+        
+        frm.Controls("lblPrompt").Caption = "Paste your list for the '" & columnHeaders(i) & "' column."
+        If expectedRowCount <> -1 Then
+            frm.Controls("lblPrompt").Caption = frm.Controls("lblPrompt").Caption & vbCrLf & "(Expecting " & expectedRowCount & " rows)"
+        End If
+        
+        frm.Show
+        
+        If frm.Controls("txtInput").Tag = "CANCELLED" Then
+            MsgBox "Operation cancelled by user.", vbInformation
+            Unload frm
+            Exit Sub
+        End If
+        
+        tempInput = frm.Controls("txtInput").Text
+        Unload frm
+        
+        tempInput = Replace(Replace(tempInput, vbCrLf, vbLf), vbCr, vbLf)
+        rowData = Split(tempInput, vbLf)
+        
+        Dim currentRowCount As Long
+        If UBound(rowData) = 0 And rowData(0) = "" Then
+            currentRowCount = 0
+            ReDim rowData(0 To -1)
+        Else
+            currentRowCount = UBound(rowData) + 1
+        End If
+        
+        If expectedRowCount = -1 Then
+            expectedRowCount = currentRowCount
+        Else
+            If currentRowCount <> expectedRowCount Then
+                MsgBox "Data mismatch! Expected " & expectedRowCount & " rows but got " & currentRowCount & ".", vbCritical
+                Exit Sub
+            End If
+        End If
+        
+        dataCollection.Add Item:=rowData
+    Next i
+    
+    If expectedRowCount = 0 Then
+        MsgBox "No data entered.", vbInformation
+        Exit Sub
+    End If
+    
+    Set finalTable = ActiveDocument.Tables.Add(Range:=originalSelection, NumRows:=expectedRowCount + 1, NumColumns:=numCols)
+    finalTable.Style = "Table Grid"
+    finalTable.AutoFitBehavior wdAutoFitContent
+    
+    For j = 1 To numCols
+        finalTable.Cell(1, j).Range.Text = columnHeaders(j - 1)
+        finalTable.Cell(1, j).Range.Font.Bold = True
+    Next j
+    
+    For i = 1 To expectedRowCount
+        For j = 1 To numCols
+            finalTable.Cell(i + 1, j).Range.Text = dataCollection(j)(i - 1)
+        Next j
+    Next i
+    
+    MsgBox "Table created successfully.", vbInformation
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "An unexpected error occurred: " & vbCrLf & Err.Description, vbCritical
+End Sub
+
+
+Private Function CreateTheUserForm(ByVal formName As String) As Boolean
+    ' This function programmatically creates a UserForm and its controls.
+    
+    Dim vbComp As Object ' VBComponent
+    Dim ctrl As Object   ' Control
+    Dim codeMod As Object ' CodeModule
+
+    On Error GoTo CreationError
+    
+    ' Add a new UserForm component to the project
+    Set vbComp = ThisDocument.VBProject.VBComponents.Add(3) ' 3 = vbext_ct_MSForm
+    With vbComp
+        .Name = formName
+        .Properties("Caption") = "Bulk Data Entry"
+        .Properties("Width") = 240
+        .Properties("Height") = 180
+    End With
+
+    ' Add a Label
+    Set ctrl = vbComp.Designer.Controls.Add("Forms.Label.1")
+    With ctrl
+        .Name = "lblPrompt"
+        .Caption = "Prompt text goes here"
+        .Left = 12
+        .Top = 12
+        .Width = 200
+        .Height = 36
+        .WordWrap = True
+    End With
+
+    ' Add a TextBox
+    Set ctrl = vbComp.Designer.Controls.Add("Forms.TextBox.1")
+    With ctrl
+        .Name = "txtInput"
+        .Left = 12
+        .Top = 54
+        .Width = 200
+        .Height = 60
+        .MultiLine = True
+        .ScrollBars = 3 ' Both
+        .EnterKeyBehavior = True
+        .Tag = "" ' We will use this to signal cancellation
+    End With
+
+    ' Add an OK Button
+    Set ctrl = vbComp.Designer.Controls.Add("Forms.CommandButton.1")
+    With ctrl
+        .Name = "btnOK"
+        .Caption = "OK"
+        .Left = 138
+        .Top = 120
+        .Width = 75
+        .Height = 24
+        .Default = True
+    End With
+
+    ' Add a Cancel Button
+    Set ctrl = vbComp.Designer.Controls.Add("Forms.CommandButton.1")
+    With ctrl
+        .Name = "btnCancel"
+        .Caption = "Cancel"
+        .Left = 54
+        .Top = 120
+        .Width = 75
+        .Height = 24
+        .Cancel = True
+    End With
+    
+    'Inject the necessary VBA code into the new form
+    Set codeMod = vbComp.CodeModule
+    Dim sCode As String
+    sCode = "Private Sub btnOK_Click()" & vbCrLf & _
+            "    Me.Hide" & vbCrLf & _
+            "End Sub" & vbCrLf & _
+            "Private Sub btnCancel_Click()" & vbCrLf & _
+            "    Me.Controls(""txtInput"").Tag = ""CANCELLED""" & vbCrLf & _
+            "    Me.Hide" & vbCrLf & _
+            "End Sub" & vbCrLf & _
+            "Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)" & vbCrLf & _
+            "    If CloseMode = vbFormControlMenu Then" & vbCrLf & _
+            "        Me.Controls(""txtInput"").Tag = ""CANCELLED""" & vbCrLf & _
+            "    End If" & vbCrLf & _
+            "End Sub"
+            
+    codeMod.AddFromString sCode
+
+    CreateTheUserForm = True
+    Exit Function
+
+CreationError:
+    CreateTheUserForm = False
+End Function

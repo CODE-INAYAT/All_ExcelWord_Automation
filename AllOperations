@@ -1,0 +1,520 @@
+Sub ProcessAndFormatStudentData()    
+    ' Autofitcells Settings
+    Const FONT_NAME As String = "Calibri"
+    Const FONT_SIZE As Long = 11
+    Const EXTRA_WIDTH_CM As Double = 0.2
+    Const EXTRA_HEIGHT_CM As Double = 0.1
+    
+    ' Uppercase Settings
+    Const T_AND_P_UID_HEADER As String = "T&P UID"
+    
+    ' SortData Settings
+    Const YEAR_COL As String = "Year"
+    Const BRANCH_COL As String = "Branch"
+    Const DIVISION_COL As String = "Division"
+    Const ROLLNO_COL As String = "Roll No."
+    Const NAME_COL As String = "Name"
+    Const YEAR_CUSTOM_ORDER As String = "FE,SE,TE,BE"
+    
+    ' BranchDiv Settings
+    Const NEW_BRANCHDIV_HEADER As String = "BranchDiv"
+
+    ' --- VARIABLE DECLARATIONS (Consolidated) ---
+    Dim ws As Worksheet
+    Dim targetRange As Range, dataRange As Range, sortRange As Range
+    Dim col As Range, rw As Range, cell As Range, targetCol As Range
+    Dim yearHeader As Range, branchHeader As Range, divHeader As Range, rollHeader As Range, nameHeader As Range
+    Dim lastRow As Long, lastCol As Long, cellsChanged As Long
+    Dim branchColNum As Long, divColNum As Long, insertionPoint As Long, i As Long
+    Dim extraWidthUnits As Double, extraHeightUnits As Double
+    Dim branchVal As String, divVal As String
+    Dim branchDivData() As Variant
+
+    ' Turn off screen updating for a massive performance boost
+    Application.ScreenUpdating = False
+    
+    ' Set up error handling to ensure ScreenUpdating is always turned back on
+    On Error GoTo CleanUp
+
+    ' Validate and set the worksheet object to the active sheet
+    If TypeName(ActiveSheet) <> "Worksheet" Then
+        MsgBox "This macro must be run on a standard worksheet.", vbExclamation, "Invalid Sheet Type"
+        GoTo CleanUp
+    End If
+    Set ws = ActiveSheet
+
+    ' Check if the sheet has any data to process at all
+    If IsEmpty(ws.Cells(1, 1)) And ws.Cells.SpecialCells(xlCellTypeLastCell).Address = "$A$1" Then
+        MsgBox "No data found on the active sheet to process.", vbInformation, "Sheet is Empty"
+        GoTo CleanUp
+    End If
+    
+    ' >>>>>>>>>> 1. Autofitcells (Initial Full Formatting) <<<<<<<<<<
+    Debug.Print "Step 1: Applying initial formatting..."
+    
+    ' Automatically find the last row and column to define the data range
+    lastRow = ws.Cells.Find(What:="*", SearchOrder:=xlByRows, SearchDirection:=xlPrevious).Row
+    lastCol = ws.Cells.Find(What:="*", SearchOrder:=xlByColumns, SearchDirection:=xlPrevious).Column
+    Set targetRange = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol))
+
+    ' Apply Core Formatting (Font, Alignment, and Borders)
+    With targetRange
+        .Font.Name = FONT_NAME
+        .Font.Size = FONT_SIZE
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Borders.LineStyle = xlContinuous
+        .Borders.Weight = xlThin
+    End With
+    
+    ' Apply AutoFit
+    targetRange.Columns.AutoFit
+    targetRange.Rows.AutoFit
+
+    ' Add extra padding
+    If EXTRA_WIDTH_CM > 0 Then
+        extraWidthUnits = EXTRA_WIDTH_CM / 0.2
+        For Each col In targetRange.Columns
+            col.ColumnWidth = col.ColumnWidth + extraWidthUnits
+        Next col
+    End If
+    
+    If EXTRA_HEIGHT_CM > 0 Then
+        extraHeightUnits = EXTRA_HEIGHT_CM * 28.35
+        For Each rw In targetRange.Rows
+            rw.RowHeight = rw.RowHeight + extraHeightUnits
+        Next rw
+    End If
+
+    ' >>>>>>>>>> 2. SpaceRemover (Trim All Cells) <<<<<<<<<<
+    Debug.Print "Step 2: Trimming spaces from all cells..."
+    
+    cellsChanged = 0
+    ' The targetRange is already set from the previous step
+    For Each cell In targetRange.Cells
+        If VarType(cell.Value) = vbString Then
+            If cell.Value <> Trim(cell.Value) Then
+                cell.Value = Trim(cell.Value)
+                cellsChanged = cellsChanged + 1
+            End If
+        End If
+    Next cell
+
+    ' >>>>>>>>>> 3. Uppercase (T&P UID Column) <<<<<<<<<<
+    Debug.Print "Step 3: Converting T&P UID column to uppercase..."
+    
+    Set targetCol = ws.Rows(1).Find(What:=T_AND_P_UID_HEADER, LookAt:=xlWhole, MatchCase:=False)
+
+    If targetCol Is Nothing Then
+        MsgBox "The column '" & T_AND_P_UID_HEADER & "' could not be found." & vbCrLf & _
+               "The Uppercase step was skipped.", vbCritical, "Column Not Found"
+    Else
+        lastRow = ws.Cells(ws.Rows.Count, targetCol.Column).End(xlUp).Row
+        If lastRow > 1 Then
+            Set dataRange = ws.Range(ws.Cells(2, targetCol.Column), ws.Cells(lastRow, targetCol.Column))
+            For Each cell In dataRange
+                If Not IsEmpty(cell.Value) And VarType(cell.Value) = vbString Then
+                    cell.Value = UCase(cell.Value)
+                End If
+            Next cell
+        End If
+    End If
+
+    ' >>>>>>>>>> 4. SortData (Multi-level Sort) <<<<<<<<<<
+    Debug.Print "Step 4: Sorting data..."
+    
+    ' Find the last row and column for the sort range
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    Set sortRange = ws.Range("A1").Resize(lastRow, lastCol)
+
+    ' Find header columns for sorting
+    Set yearHeader = ws.Rows(1).Find(What:=YEAR_COL, LookAt:=xlWhole, MatchCase:=False)
+    Set branchHeader = ws.Rows(1).Find(What:=BRANCH_COL, LookAt:=xlWhole, MatchCase:=False)
+    Set divHeader = ws.Rows(1).Find(What:=DIVISION_COL, LookAt:=xlWhole, MatchCase:=False)
+    Set rollHeader = ws.Rows(1).Find(What:=ROLLNO_COL, LookAt:=xlWhole, MatchCase:=False)
+    Set nameHeader = ws.Rows(1).Find(What:=NAME_COL, LookAt:=xlWhole, MatchCase:=False)
+
+    If yearHeader Is Nothing Or branchHeader Is Nothing Or divHeader Is Nothing Or rollHeader Is Nothing Or nameHeader Is Nothing Then
+        MsgBox "One or more required columns for sorting could not be found. Please check headers: " & _
+               vbCrLf & "- " & YEAR_COL & ", " & BRANCH_COL & ", " & DIVISION_COL & ", " & ROLLNO_COL & ", " & NAME_COL & _
+               vbCrLf & "The Sort step was skipped.", vbCritical, "Sort Columns Not Found"
+    Else
+        With ws.Sort
+            .SortFields.Clear
+            .SortFields.Add Key:=yearHeader, SortOn:=xlSortOnValues, Order:=xlAscending, CustomOrder:=YEAR_CUSTOM_ORDER, DataOption:=xlSortNormal
+            .SortFields.Add Key:=branchHeader, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+            .SortFields.Add Key:=divHeader, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+            .SortFields.Add Key:=rollHeader, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+            .SortFields.Add Key:=nameHeader, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+            .SetRange sortRange
+            .Header = xlYes
+            .MatchCase = False
+            .Orientation = xlTopToBottom
+            .SortMethod = xlPinYin
+            .Apply
+        End With
+    End If
+
+    ' >>>>>>>>>> 5. BranchDiv (Create Combined Column) <<<<<<<<<<
+    Debug.Print "Step 5: Creating BranchDiv column..."
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    branchColNum = 0
+    divColNum = 0
+    On Error Resume Next ' Temporarily ignore errors if Find fails
+    branchColNum = ws.Rows(1).Find(What:=BRANCH_COL, LookAt:=xlWhole, MatchCase:=False).Column
+    divColNum = ws.Rows(1).Find(What:=DIVISION_COL, LookAt:=xlWhole, MatchCase:=False).Column
+    On Error GoTo CleanUp ' Restore normal error handling
+
+    If branchColNum = 0 Or divColNum = 0 Then
+        MsgBox "Could not find '" & BRANCH_COL & "' and/or '" & DIVISION_COL & "' columns." & _
+               vbCrLf & "The BranchDiv creation step was skipped.", vbExclamation, "Columns Not Found"
+    Else
+        ' Prepare data in an array first for performance
+        ReDim branchDivData(1 To lastRow - 1, 1 To 1)
+        For i = 2 To lastRow
+            branchVal = CStr(ws.Cells(i, branchColNum).Value)
+            divVal = CStr(ws.Cells(i, divColNum).Value)
+            If UCase(Trim(divVal)) = "NA" Then
+                branchDivData(i - 1, 1) = branchVal
+            Else
+                branchDivData(i - 1, 1) = branchVal & "-" & divVal
+            End If
+        Next i
+
+        ' Now, modify the worksheet
+        insertionPoint = branchColNum ' Insert before the original Branch column
+        ws.Columns(insertionPoint).Insert Shift:=xlToRight
+        ws.Cells(1, insertionPoint).Value = NEW_BRANCHDIV_HEADER
+        ws.Cells(2, insertionPoint).Resize(UBound(branchDivData, 1), 1).Value = branchDivData
+        ws.Columns(insertionPoint).AutoFit
+    End If
+
+    ' >>>>>>>>>> 6. Autofitcells (Final Full Formatting) <<<<<<<<<<
+    Debug.Print "Step 6: Applying final formatting..."
+    
+    ' Re-calculate the data range as a new column was added
+    lastRow = ws.Cells.Find(What:="*", SearchOrder:=xlByRows, SearchDirection:=xlPrevious).Row
+    lastCol = ws.Cells.Find(What:="*", SearchOrder:=xlByColumns, SearchDirection:=xlPrevious).Column
+    Set targetRange = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol))
+
+    ' Apply Core Formatting again to include the new column
+    With targetRange
+        .Font.Name = FONT_NAME
+        .Font.Size = FONT_SIZE
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Borders.LineStyle = xlContinuous
+        .Borders.Weight = xlThin
+    End With
+    
+    ' Apply AutoFit again
+    targetRange.Columns.AutoFit
+    targetRange.Rows.AutoFit
+
+    ' Add extra padding again
+    If EXTRA_WIDTH_CM > 0 Then
+        extraWidthUnits = EXTRA_WIDTH_CM / 0.2
+        For Each col In targetRange.Columns
+            col.ColumnWidth = col.ColumnWidth + extraWidthUnits
+        Next col
+    End If
+    
+    If EXTRA_HEIGHT_CM > 0 Then
+        extraHeightUnits = EXTRA_HEIGHT_CM * 28.35
+        For Each rw In targetRange.Rows
+            rw.RowHeight = rw.RowHeight + extraHeightUnits
+        Next rw
+    End If
+
+    ' --- FINALIZATION ---
+    MsgBox "All operations completed successfully." & vbCrLf & vbCrLf & _
+           cellsChanged & " cell(s) had leading/trailing spaces removed.", vbInformation, "Process Complete"
+
+CleanUp:
+    ' Restore screen updating regardless of success or error
+    Application.ScreenUpdating = True
+    
+    ' If an error occurred, notify the user
+    If Err.Number <> 0 Then
+        MsgBox "An error occurred: " & vbCrLf & Err.Description, vbCritical, "Macro Error"
+        Err.Clear
+    End If
+
+End Sub
+
+
+
+
+
+'======================All Opertion With Sr. No column========================
+Sub ProcessAndFormatStudentData()
+    ' Autofitcells Settings
+    Const FONT_NAME As String = "Calibri"
+    Const FONT_SIZE As Long = 11
+    Const EXTRA_WIDTH_CM As Double = 0.2
+    Const EXTRA_HEIGHT_CM As Double = 0.1
+    
+    ' Uppercase Settings
+    Const T_AND_P_UID_HEADER As String = "T&P UID"
+    
+    ' SortData Settings
+    Const YEAR_COL As String = "Year"
+    Const BRANCH_COL As String = "Branch"
+    Const DIVISION_COL As String = "Division"
+    Const ROLLNO_COL As String = "Roll No."
+    Const NAME_COL As String = "Name"
+    Const YEAR_CUSTOM_ORDER As String = "FE,SE,TE,BE"
+    
+    ' BranchDiv Settings
+    Const NEW_BRANCHDIV_HEADER As String = "BranchDiv"
+
+    ' --- VARIABLE DECLARATIONS (Consolidated) ---
+    Dim ws As Worksheet
+    Dim targetRange As Range, dataRange As Range, sortRange As Range
+    Dim col As Range, rw As Range, cell As Range, targetCol As Range
+    Dim yearHeader As Range, branchHeader As Range, divHeader As Range, rollHeader As Range, nameHeader As Range
+    Dim lastRow As Long, lastCol As Long, cellsChanged As Long
+    Dim branchColNum As Long, divColNum As Long, insertionPoint As Long, i As Long
+    Dim extraWidthUnits As Double, extraHeightUnits As Double
+    Dim branchVal As String, divVal As String
+    Dim branchDivData() As Variant, srNoData() As Variant ' <-- Added srNoData variable
+
+    ' Turn off screen updating for a massive performance boost
+    Application.ScreenUpdating = False
+    
+    ' Set up error handling to ensure ScreenUpdating is always turned back on
+    On Error GoTo CleanUp
+
+    ' Validate and set the worksheet object to the active sheet
+    If TypeName(ActiveSheet) <> "Worksheet" Then
+        MsgBox "This macro must be run on a standard worksheet.", vbExclamation, "Invalid Sheet Type"
+        GoTo CleanUp
+    End If
+    Set ws = ActiveSheet
+
+    ' Check if the sheet has any data to process at all
+    If IsEmpty(ws.Cells(1, 1)) And ws.Cells.SpecialCells(xlCellTypeLastCell).Address = "$A$1" Then
+        MsgBox "No data found on the active sheet to process.", vbInformation, "Sheet is Empty"
+        GoTo CleanUp
+    End If
+    
+    ' >>>>>>>>>> 1. Autofitcells (Initial Full Formatting) <<<<<<<<<<
+    Debug.Print "Step 1: Applying initial formatting..."
+    
+    ' Automatically find the last row and column to define the data range
+    lastRow = ws.Cells.Find(What:="*", SearchOrder:=xlByRows, SearchDirection:=xlPrevious).Row
+    lastCol = ws.Cells.Find(What:="*", SearchOrder:=xlByColumns, SearchDirection:=xlPrevious).Column
+    Set targetRange = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol))
+
+    ' Apply Core Formatting (Font, Alignment, and Borders)
+    With targetRange
+        .Font.Name = FONT_NAME
+        .Font.Size = FONT_SIZE
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Borders.LineStyle = xlContinuous
+        .Borders.Weight = xlThin
+    End With
+    
+    ' Apply AutoFit
+    targetRange.Columns.AutoFit
+    targetRange.Rows.AutoFit
+
+    ' Add extra padding
+    If EXTRA_WIDTH_CM > 0 Then
+        extraWidthUnits = EXTRA_WIDTH_CM / 0.2
+        For Each col In targetRange.Columns
+            col.ColumnWidth = col.ColumnWidth + extraWidthUnits
+        Next col
+    End If
+    
+    If EXTRA_HEIGHT_CM > 0 Then
+        extraHeightUnits = EXTRA_HEIGHT_CM * 28.35
+        For Each rw In targetRange.Rows
+            rw.RowHeight = rw.RowHeight + extraHeightUnits
+        Next rw
+    End If
+
+    ' >>>>>>>>>> 2. SpaceRemover (Trim All Cells) <<<<<<<<<<
+    Debug.Print "Step 2: Trimming spaces from all cells..."
+    
+    cellsChanged = 0
+    ' The targetRange is already set from the previous step
+    For Each cell In targetRange.Cells
+        If VarType(cell.Value) = vbString Then
+            If cell.Value <> Trim(cell.Value) Then
+                cell.Value = Trim(cell.Value)
+                cellsChanged = cellsChanged + 1
+            End If
+        End If
+    Next cell
+
+    ' >>>>>>>>>> 3. Uppercase (T&P UID Column) <<<<<<<<<<
+    Debug.Print "Step 3: Converting T&P UID column to uppercase..."
+    
+    Set targetCol = ws.Rows(1).Find(What:=T_AND_P_UID_HEADER, LookAt:=xlWhole, MatchCase:=False)
+
+    If targetCol Is Nothing Then
+        MsgBox "The column '" & T_AND_P_UID_HEADER & "' could not be found." & vbCrLf & _
+               "The Uppercase step was skipped.", vbCritical, "Column Not Found"
+    Else
+        lastRow = ws.Cells(ws.Rows.Count, targetCol.Column).End(xlUp).Row
+        If lastRow > 1 Then
+            Set dataRange = ws.Range(ws.Cells(2, targetCol.Column), ws.Cells(lastRow, targetCol.Column))
+            For Each cell In dataRange
+                If Not IsEmpty(cell.Value) And VarType(cell.Value) = vbString Then
+                    cell.Value = UCase(cell.Value)
+                End If
+            Next cell
+        End If
+    End If
+
+    ' >>>>>>>>>> 4. SortData (Multi-level Sort) <<<<<<<<<<
+    Debug.Print "Step 4: Sorting data..."
+    
+    ' Find the last row and column for the sort range
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    Set sortRange = ws.Range("A1").Resize(lastRow, lastCol)
+
+    ' Find header columns for sorting
+    Set yearHeader = ws.Rows(1).Find(What:=YEAR_COL, LookAt:=xlWhole, MatchCase:=False)
+    Set branchHeader = ws.Rows(1).Find(What:=BRANCH_COL, LookAt:=xlWhole, MatchCase:=False)
+    Set divHeader = ws.Rows(1).Find(What:=DIVISION_COL, LookAt:=xlWhole, MatchCase:=False)
+    Set rollHeader = ws.Rows(1).Find(What:=ROLLNO_COL, LookAt:=xlWhole, MatchCase:=False)
+    Set nameHeader = ws.Rows(1).Find(What:=NAME_COL, LookAt:=xlWhole, MatchCase:=False)
+
+    If yearHeader Is Nothing Or branchHeader Is Nothing Or divHeader Is Nothing Or rollHeader Is Nothing Or nameHeader Is Nothing Then
+        MsgBox "One or more required columns for sorting could not be found. Please check headers: " & _
+               vbCrLf & "- " & YEAR_COL & ", " & BRANCH_COL & ", " & DIVISION_COL & ", " & ROLLNO_COL & ", " & NAME_COL & _
+               vbCrLf & "The Sort step was skipped.", vbCritical, "Sort Columns Not Found"
+    Else
+        With ws.Sort
+            .SortFields.Clear
+            .SortFields.Add Key:=yearHeader, SortOn:=xlSortOnValues, Order:=xlAscending, CustomOrder:=YEAR_CUSTOM_ORDER, DataOption:=xlSortNormal
+            .SortFields.Add Key:=branchHeader, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+            .SortFields.Add Key:=divHeader, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+            .SortFields.Add Key:=rollHeader, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+            .SortFields.Add Key:=nameHeader, SortOn:=xlSortOnValues, Order:=xlAscending, DataOption:=xlSortNormal
+            .SetRange sortRange
+            .Header = xlYes
+            .MatchCase = False
+            .Orientation = xlTopToBottom
+            .SortMethod = xlPinYin
+            .Apply
+        End With
+    End If
+
+    ' >>>>>>>>>> 5. BranchDiv (Create Combined Column) <<<<<<<<<<
+    Debug.Print "Step 5: Creating BranchDiv column..."
+    
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    branchColNum = 0
+    divColNum = 0
+    On Error Resume Next ' Temporarily ignore errors if Find fails
+    branchColNum = ws.Rows(1).Find(What:=BRANCH_COL, LookAt:=xlWhole, MatchCase:=False).Column
+    divColNum = ws.Rows(1).Find(What:=DIVISION_COL, LookAt:=xlWhole, MatchCase:=False).Column
+    On Error GoTo CleanUp ' Restore normal error handling
+
+    If branchColNum = 0 Or divColNum = 0 Then
+        MsgBox "Could not find '" & BRANCH_COL & "' and/or '" & DIVISION_COL & "' columns." & _
+               vbCrLf & "The BranchDiv creation step was skipped.", vbExclamation, "Columns Not Found"
+    Else
+        ' Prepare data in an array first for performance
+        ReDim branchDivData(1 To lastRow - 1, 1 To 1)
+        For i = 2 To lastRow
+            branchVal = CStr(ws.Cells(i, branchColNum).Value)
+            divVal = CStr(ws.Cells(i, divColNum).Value)
+            If UCase(Trim(divVal)) = "NA" Then
+                branchDivData(i - 1, 1) = branchVal
+            Else
+                branchDivData(i - 1, 1) = branchVal & "-" & divVal
+            End If
+        Next i
+
+        ' Now, modify the worksheet
+        insertionPoint = branchColNum ' Insert before the original Branch column
+        ws.Columns(insertionPoint).Insert Shift:=xlToRight
+        ws.Cells(1, insertionPoint).Value = NEW_BRANCHDIV_HEADER
+        ws.Cells(2, insertionPoint).Resize(UBound(branchDivData, 1), 1).Value = branchDivData
+        ws.Columns(insertionPoint).AutoFit
+    End If
+
+    ' >>>>>>>>>> 5a. AddSrNo (Create Serial Number Column) <<<<<<<<<<
+    Debug.Print "Step 5a: Adding Sr. No. column..."
+    
+    ' Insert a new column at the very beginning (Column A)
+    ws.Columns("A").Insert Shift:=xlToRight
+    
+    ' Add the header for the new column
+    ws.Cells(1, 1).Value = "Sr. No"
+    
+    ' Find the last row of data again (using column B now, since A is new)
+    lastRow = ws.Cells(ws.Rows.Count, 2).End(xlUp).Row
+    
+    ' Check if there are data rows to number (i.e., more than just a header)
+    If lastRow > 1 Then
+        ' Create an array to hold the serial numbers for fast population
+        ReDim srNoData(1 To lastRow - 1, 1 To 1)
+        For i = 1 To lastRow - 1
+            srNoData(i, 1) = i
+        Next i
+        
+        ' Write the entire array to the worksheet in a single operation
+        ws.Cells(2, 1).Resize(UBound(srNoData, 1), 1).Value = srNoData
+    End If
+
+    ' >>>>>>>>>> 6. Autofitcells (Final Full Formatting) <<<<<<<<<<
+    Debug.Print "Step 6: Applying final formatting..."
+    
+    ' Re-calculate the data range as new columns were added
+    lastRow = ws.Cells.Find(What:="*", SearchOrder:=xlByRows, SearchDirection:=xlPrevious).Row
+    lastCol = ws.Cells.Find(What:="*", SearchOrder:=xlByColumns, SearchDirection:=xlPrevious).Column
+    Set targetRange = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, lastCol))
+
+    ' Apply Core Formatting again to include the new columns
+    With targetRange
+        .Font.Name = FONT_NAME
+        .Font.Size = FONT_SIZE
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+        .Borders.LineStyle = xlContinuous
+        .Borders.Weight = xlThin
+    End With
+    
+    ' Apply AutoFit again
+    targetRange.Columns.AutoFit
+    targetRange.Rows.AutoFit
+
+    ' Add extra padding again
+    If EXTRA_WIDTH_CM > 0 Then
+        extraWidthUnits = EXTRA_WIDTH_CM / 0.2
+        For Each col In targetRange.Columns
+            col.ColumnWidth = col.ColumnWidth + extraWidthUnits
+        Next col
+    End If
+    
+    If EXTRA_HEIGHT_CM > 0 Then
+        extraHeightUnits = EXTRA_HEIGHT_CM * 28.35
+        For Each rw In targetRange.Rows
+            rw.RowHeight = rw.RowHeight + extraHeightUnits
+        Next rw
+    End If
+
+    ' --- FINALIZATION ---
+    MsgBox "All operations completed successfully." & vbCrLf & vbCrLf & _
+           cellsChanged & " cell(s) had leading/trailing spaces removed.", vbInformation, "Process Complete"
+
+CleanUp:
+    ' Restore screen updating regardless of success or error
+    Application.ScreenUpdating = True
+    
+    ' If an error occurred, notify the user
+    If Err.Number <> 0 Then
+        MsgBox "An error occurred: " & vbCrLf & Err.Description, vbCritical, "Macro Error"
+        Err.Clear
+    End If
+
+End Sub
