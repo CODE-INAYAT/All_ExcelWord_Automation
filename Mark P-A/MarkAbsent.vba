@@ -5,8 +5,8 @@ Sub MarkAbsentInAttendance()
     Dim colNum As Long
     Dim i As Long
     
-    ' Set the worksheet (change "Sheet1" if needed)
-    Set ws = ThisWorkbook.Sheets("Sheet1")
+    ' Set the worksheet to the active sheet
+    Set ws = ActiveSheet
     
     ' Find the column number for "Attendance"
     On Error Resume Next

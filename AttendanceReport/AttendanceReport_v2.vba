@@ -4,15 +4,17 @@ Sub GenerateAttendanceReportFormatted()
     ' ===== SETTINGS =====
     Dim attendanceColName As String: attendanceColName = "Attendance"
     
-    ' Define grouping combinations
+    ' 'Define grouping combinations
     Dim groupCombos As Variant
     groupCombos = Array( _
-        Array("Branch"), _
-        Array("Branch", "Division"), _
-        Array("Year"), _
-        Array("Year", "Branch") _
+       Array("Branch"), _
+       Array("BranchDiv"), _
+       Array("Year"), _
+       Array("Year", "Branch") _
     )
-    
+
+    'Array("Branch", "Division"), _
+
     ' Define sorting options for each grouping combination
     Dim sortingDict As Object
     Set sortingDict = CreateObject("Scripting.Dictionary")
@@ -65,6 +67,12 @@ Sub GenerateAttendanceReportFormatted()
     totalAdmittedDict("M&ME-NA") = 71
     totalAdmittedDict("MECH-NA") = 73
     ' ====================
+
+    ' ***** NEW: Ask the user whether they want to keep the values of "Total Admitted" the same as "Total Registered". *****
+    Dim userChoice As VbMsgBoxResult
+    userChoice = MsgBox("Do you want to keep the values of 'Total Admitted' the same as 'Total Registered'?", _
+                        vbYesNo + vbQuestion, _
+                        "Set Total Admitted Values")
 
     Dim ws As Worksheet
     Set ws = ActiveSheet
@@ -157,16 +165,20 @@ Sub GenerateAttendanceReportFormatted()
         reportWS.Cells(outputRow, 2).Value = "Total Admitted"
         reportWS.Cells(outputRow, 3).Value = "Total Present"
         reportWS.Cells(outputRow, 4).Value = "Total Registered"
-        reportWS.Cells(outputRow, 5).Value = "Percentage (Total Registered & Present)"
-        reportWS.Cells(outputRow, 6).Value = "Percentage (Total Admitted, Total Registered, Present)"
-        reportWS.Range(reportWS.Cells(outputRow, 1), reportWS.Cells(outputRow, 6)).Font.Bold = True
+        ' ***** NEW: Add new column header and shift existing ones *****
+        reportWS.Cells(outputRow, 5).Value = "Percentage (Total Admitted & Total Present)"
+        reportWS.Cells(outputRow, 6).Value = "Percentage (Total Registered & Present)"
+        reportWS.Cells(outputRow, 7).Value = "Percentage (Total Admitted, Total Registered, Present)"
+        reportWS.Range(reportWS.Cells(outputRow, 1), reportWS.Cells(outputRow, 7)).Font.Bold = True
         
         ' Add background color to indicate editable columns
         reportWS.Cells(outputRow, 2).Interior.Color = RGB(255, 255, 200) ' Light yellow for Total Admitted
         reportWS.Cells(outputRow, 3).Interior.Color = RGB(200, 255, 200) ' Light green for Total Present
         reportWS.Cells(outputRow, 4).Interior.Color = RGB(200, 200, 255) ' Light blue for Total Registered
+        ' ***** NEW: Add color for new column header and shift existing ones *****
         reportWS.Cells(outputRow, 5).Interior.Color = RGB(240, 240, 240) ' Light gray for calculated percentages
         reportWS.Cells(outputRow, 6).Interior.Color = RGB(240, 240, 240) ' Light gray for calculated percentages
+        reportWS.Cells(outputRow, 7).Interior.Color = RGB(240, 240, 240) ' Light gray for calculated percentages
         
         outputRow = outputRow + 1
 
@@ -179,12 +191,17 @@ Sub GenerateAttendanceReportFormatted()
         For Each k In sortedKeys
             tempArray = reportDict(k)
             
-            ' Get predefined Total Admitted value
-            If totalAdmittedDict.exists(k) Then
-                predefinedTotalAdmitted = totalAdmittedDict(k)
+            ' ***** NEW: Get Total Admitted value based on user's choice *****
+            If userChoice = vbYes Then
+                predefinedTotalAdmitted = tempArray(1) ' Set to Total Registered value
             Else
-                predefinedTotalAdmitted = 0
-                MsgBox "Warning: No predefined Total Admitted value found for group '" & k & "'. Using 0."
+                ' Original logic if user selects No
+                If totalAdmittedDict.exists(k) Then
+                    predefinedTotalAdmitted = totalAdmittedDict(k)
+                Else
+                    predefinedTotalAdmitted = 0
+                    MsgBox "Warning: No predefined Total Admitted value found for group '" & k & "'. Using 0."
+                End If
             End If
             
             reportWS.Cells(outputRow, 1).Value = k
@@ -199,15 +216,21 @@ Sub GenerateAttendanceReportFormatted()
             reportWS.Cells(outputRow, 3).Interior.Color = RGB(200, 255, 200) ' Light green for Total Present
             reportWS.Cells(outputRow, 4).Interior.Color = RGB(200, 200, 255) ' Light blue for Total Registered
             
-            ' Formula for Percentage (Total Registered & Present) - Present out of Registered
-            reportWS.Cells(outputRow, 5).Formula = "=IF(" & reportWS.Cells(outputRow, 4).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 4).Address & ",""N/A"")"
+            ' ***** NEW: Add formula for the new column and shift existing ones *****
+            ' NEW: Formula for Percentage (Total Admitted & Total Present) - Present out of Admitted
+            reportWS.Cells(outputRow, 5).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
             reportWS.Cells(outputRow, 5).NumberFormat = "0.00%"
             reportWS.Cells(outputRow, 5).Interior.Color = RGB(240, 240, 240) ' Light gray for calculated
             
-            ' Formula for Percentage (Total Admitted, Total Registered, Present) - Present out of Admitted
-            reportWS.Cells(outputRow, 6).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
+            ' SHIFTED: Formula for Percentage (Total Registered & Present) - Present out of Registered
+            reportWS.Cells(outputRow, 6).Formula = "=IF(" & reportWS.Cells(outputRow, 4).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 4).Address & ",""N/A"")"
             reportWS.Cells(outputRow, 6).NumberFormat = "0.00%"
             reportWS.Cells(outputRow, 6).Interior.Color = RGB(240, 240, 240) ' Light gray for calculated
+            
+            ' SHIFTED: Formula for Percentage (Total Admitted, Total Registered, Present) - Present out of Admitted
+            reportWS.Cells(outputRow, 7).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
+            reportWS.Cells(outputRow, 7).NumberFormat = "0.00%"
+            reportWS.Cells(outputRow, 7).Interior.Color = RGB(240, 240, 240) ' Light gray for calculated
             
             outputRow = outputRow + 1
         Next k
@@ -220,13 +243,16 @@ Sub GenerateAttendanceReportFormatted()
         reportWS.Cells(outputRow, 2).Formula = "=SUM(" & reportWS.Range(reportWS.Cells(groupStartRow, 2), reportWS.Cells(groupEndRow, 2)).Address & ")"
         reportWS.Cells(outputRow, 3).Formula = "=SUM(" & reportWS.Range(reportWS.Cells(groupStartRow, 3), reportWS.Cells(groupEndRow, 3)).Address & ")"
         reportWS.Cells(outputRow, 4).Formula = "=SUM(" & reportWS.Range(reportWS.Cells(groupStartRow, 4), reportWS.Cells(groupEndRow, 4)).Address & ")"
-        reportWS.Cells(outputRow, 5).Formula = "=IF(" & reportWS.Cells(outputRow, 4).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 4).Address & ",""N/A"")"
+        ' ***** NEW: Add formula for the new column total and shift existing ones *****
+        reportWS.Cells(outputRow, 5).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
         reportWS.Cells(outputRow, 5).NumberFormat = "0.00%"
-        reportWS.Cells(outputRow, 6).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
+        reportWS.Cells(outputRow, 6).Formula = "=IF(" & reportWS.Cells(outputRow, 4).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 4).Address & ",""N/A"")"
         reportWS.Cells(outputRow, 6).NumberFormat = "0.00%"
+        reportWS.Cells(outputRow, 7).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
+        reportWS.Cells(outputRow, 7).NumberFormat = "0.00%"
         
-        reportWS.Range(reportWS.Cells(outputRow, 1), reportWS.Cells(outputRow, 6)).Font.Bold = True
-        reportWS.Range(reportWS.Cells(outputRow, 2), reportWS.Cells(outputRow, 6)).Interior.Color = RGB(220, 220, 220) ' Darker gray for totals
+        reportWS.Range(reportWS.Cells(outputRow, 1), reportWS.Cells(outputRow, 7)).Font.Bold = True
+        reportWS.Range(reportWS.Cells(outputRow, 2), reportWS.Cells(outputRow, 7)).Interior.Color = RGB(220, 220, 220) ' Darker gray for totals
         outputRow = outputRow + 2
         
         ' Store first group total row for grand total calculation
@@ -240,13 +266,16 @@ Sub GenerateAttendanceReportFormatted()
     reportWS.Cells(outputRow, 2).Formula = "=" & reportWS.Cells(grandTotalRowBranch, 2).Address
     reportWS.Cells(outputRow, 3).Formula = "=" & reportWS.Cells(grandTotalRowBranch, 3).Address
     reportWS.Cells(outputRow, 4).Formula = "=" & reportWS.Cells(grandTotalRowBranch, 4).Address
-    reportWS.Cells(outputRow, 5).Formula = "=IF(" & reportWS.Cells(outputRow, 4).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 4).Address & ",""N/A"")"
+    ' ***** NEW: Add formula for the new column grand total and shift existing ones *****
+    reportWS.Cells(outputRow, 5).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
     reportWS.Cells(outputRow, 5).NumberFormat = "0.00%"
-        reportWS.Cells(outputRow, 6).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
+    reportWS.Cells(outputRow, 6).Formula = "=IF(" & reportWS.Cells(outputRow, 4).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 4).Address & ",""N/A"")"
     reportWS.Cells(outputRow, 6).NumberFormat = "0.00%"
+    reportWS.Cells(outputRow, 7).Formula = "=IF(" & reportWS.Cells(outputRow, 2).Address & ">0," & reportWS.Cells(outputRow, 3).Address & "/" & reportWS.Cells(outputRow, 2).Address & ",""N/A"")"
+    reportWS.Cells(outputRow, 7).NumberFormat = "0.00%"
     
-    reportWS.Range(reportWS.Cells(outputRow, 1), reportWS.Cells(outputRow, 6)).Font.Bold = True
-    reportWS.Range(reportWS.Cells(outputRow, 2), reportWS.Cells(outputRow, 6)).Interior.Color = RGB(200, 200, 200) ' Dark gray for grand total
+    reportWS.Range(reportWS.Cells(outputRow, 1), reportWS.Cells(outputRow, 7)).Font.Bold = True
+    reportWS.Range(reportWS.Cells(outputRow, 2), reportWS.Cells(outputRow, 7)).Interior.Color = RGB(200, 200, 200) ' Dark gray for grand total
 
     ' Add a legend/instruction section
     outputRow = outputRow + 3
@@ -261,7 +290,7 @@ Sub GenerateAttendanceReportFormatted()
     reportWS.Cells(outputRow + 5, 1).Value = "• Groups are sorted according to predefined rules (see settings)"
 
     ' Autofit columns
-    reportWS.Columns("A:F").AutoFit
+    reportWS.Columns("A:G").AutoFit ' ***** UPDATED: Autofit range to include new column *****
     
     ' Enable automatic calculation
     Application.Calculation = xlCalculationAutomatic

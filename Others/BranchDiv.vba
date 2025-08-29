@@ -1,4 +1,4 @@
-' Generated BranchDiv column from the Branch & Divison column
+' Generate BranchDiv column from the Branch & Divison column
 
 Sub CreateBranchDiv_BeforeBranch_Corrected()
 
